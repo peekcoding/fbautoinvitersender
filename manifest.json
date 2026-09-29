@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "FB Page Inviter",
+  "version": "1.0.0",
+  "description": "Semi-automatic helper that clicks Invite in an open Facebook reactions popup, with rate limiting.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://web.facebook.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "FB Page Inviter",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://web.facebook.com/*"
+      ],
+      "js": [
+        "content/storage.js",
+        "content/dom.js",
+        "content/overlay.js",
+        "content/engine.js",
+        "content/main.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>FB Page Inviter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>FB Page Inviter</h1>
+    <span id="stateBadge" class="badge">…</span>
+  </header>
+
+  <p id="status" class="status">Loading…</p>
+  <p id="cooldown" class="cooldown" hidden></p>
+
+  <div class="controls">
+    <button id="startBtn" class="primary">Start</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="stopBtn" class="danger">Stop</button>
+  </div>
+  <button id="overrideBtn" class="link danger" hidden>Override cooldown and start anyway…</button>
+
+  <section class="counters">
+    <div><span>This post</span><b id="cPost">0</b></div>
+    <div><span>Session</span><b id="cSession">0</b></div>
+    <div><span>Today</span><b id="cToday">0</b></div>
+    <div><span>Left today</span><b id="cLeft">0</b></div>
+    <div><span>Posts (session)</span><b id="cPosts">0</b></div>
+  </section>
+
+  <details id="settingsBox">
+    <summary>Settings</summary>
+    <form id="settingsForm" novalidate>
+      <div class="grid">
+        <label>Min delay (s)<input type="number" name="minDelay" min="0" step="0.1"></label>
+        <label>Max delay (s)<input type="number" name="maxDelay" min="0" step="0.1"></label>
+        <label>Batch size (0 = no breaks)<input type="number" name="batchSize" min="0" step="1"></label>
+        <label>Idle wait (s)<input type="number" name="idleWait" min="3" step="1"></label>
+        <label>Break min (s)<input type="number" name="breakMin" min="0" step="1"></label>
+        <label>Break max (s)<input type="number" name="breakMax" min="0" step="1"></label>
+        <label>Daily limit (0 = none)<input type="number" name="dailyLimit" min="0" step="1"></label>
+        <label>Session limit (0 = none)<input type="number" name="sessionLimit" min="0" step="1"></label>
+        <label>Block cooldown (h)<input type="number" name="cooldownHours" min="0" step="1"></label>
+      </div>
+      <label class="wide">Invite button labels (comma separated)
+        <input type="text" name="inviteLabels" placeholder="Invite, Invitar, Inviter">
+      </label>
+      <label class="check"><input type="checkbox" name="autoClose"> Close the likes popup when a post is finished</label>
+      <label class="check"><input type="checkbox" name="autoContinue"> Start automatically when the next likes popup opens</label>
+      <label class="check"><input type="checkbox" name="debug"> Verbose console logs (debug)</label>
+      <ul id="formErrors" class="errors"></ul>
+      <div class="row">
+        <button type="submit" class="primary">Save settings</button>
+        <button type="button" id="defaultsBtn">Defaults</button>
+        <span id="savedMsg" class="saved" hidden>Saved</span>
+      </div>
+    </form>
+  </details>
+
+  <details id="statsBox">
+    <summary>Stats &amp; history</summary>
+    <h2>Last 7 days</h2>
+    <table id="daysTable"></table>
+    <h2>Recent posts</h2>
+    <table id="historyTable"></table>
+    <button id="resetStatsBtn" class="link danger">Reset stats…</button>
+  </details>
+
+  <script src="content/storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Likes Popup</title>
+<!--
+  Local imitation of a Facebook reactions ("likes") popup for testing FB Page Inviter.
+  Serve it from localhost (e.g. http://localhost/autoinvite/test/mock-likes.html with XAMPP),
+  because the extension's TEST-ONLY content script entry matches http://localhost/*.
+
+  Query params:
+    ?fast=1     lazy load after 0.3-0.6 s instead of 1-3 s
+    ?broken=1   Invite clicks do nothing (tests the consecutive failure guard)
+    ?fail=0.05  probability that a clicked Invite silently stays "Invite" (default 0.05)
+    ?max=100    stop lazy loading after this many rows
+    ?open=1     open the likes popup on load
+
+  window.__mock.log holds every click on a row button: { post, name, label, t }.
+-->
+<style>
+  body { margin: 0; font: 14px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f0f2f5; color: #1c1e21; }
+  .page { max-width: 640px; margin: 24px auto; padding: 0 16px; }
+  .card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.15); margin-bottom: 16px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tools button { padding: 8px 12px; border-radius: 6px; border: 1px solid #ccd0d5; background: #fff; cursor: pointer; font: inherit; }
+  .tools button.warn { color: #c62828; }
+  .muted { color: #65676b; font-size: 12px; }
+  .reactions-link { color: #65676b; cursor: pointer; text-decoration: underline; }
+  .layer { position: fixed; inset: 0; background: rgba(255,255,255,.6); display: flex; align-items: center; justify-content: center; }
+  [role="dialog"].likes { width: 548px; max-width: calc(100vw - 32px); background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(0,0,0,.25); display: flex; flex-direction: column; max-height: 70vh; }
+  .likes header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #dadde1; font-weight: 600; }
+  .close { width: 36px; height: 36px; border-radius: 50%; background: #e4e6eb; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .scroller { overflow-y: auto; flex: 1; padding: 4px 8px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 8px; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: #bcc0c4; flex: none; }
+  .row a { flex: 1; color: #050505; font-weight: 600; text-decoration: none; }
+  .act { padding: 6px 12px; border-radius: 6px; background: #e4e6eb; font-weight: 600; cursor: pointer; }
+  .act.invite { background: #e7f3ff; color: #1877f2; }
+  .act[aria-disabled="true"] { opacity: .6; cursor: default; }
+  .loader { text-align: center; padding: 10px; color: #65676b; }
+  .toast { position: fixed; left: 16px; bottom: 16px; background: #fff; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.3); padding: 16px; width: 320px; }
+  .toast h3 { margin: 0 0 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="card">
+    <h2 style="margin-top:0">Mock Page post</h2>
+    <div class="tools">
+      <button id="openBtn">Open likes popup</button>
+      <button id="nextBtn">Open another post</button>
+      <button id="closeBtn">Close popup</button>
+      <button id="warnBtn" class="warn">Simulate Facebook "try again later"</button>
+    </div>
+    <p class="muted" id="info"></p>
+  </div>
+
+  <!-- A pre-existing dialog behind the likes popup, like Facebook's post modal.
+       It contains a "Follow" button and the word "limit" on purpose: neither may
+       be picked as the likes popup nor trigger block detection. -->
+  <div class="card" role="dialog" aria-label="Post">
+    <p><b>Mock Page</b> <span role="button" class="act">Follow</span></p>
+    <p>Our new product is here! <span class="reactions-link" id="reactionsLink">👍 1.2K</span></p>
+    <p class="muted">Comment: "There's no limit to how good this is."</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const FAST = params.get('fast') === '1';
+  const BROKEN = params.get('broken') === '1';
+  const FAIL = params.has('fail') ? Number(params.get('fail')) : 0.05;
+  const MAX = Number(params.get('max') || 100);
+  const BATCH = 15;
+
+  const mock = (window.__mock = { log: [], post: 0, rows: 0, loads: 0 });
+  let layer = null;
+  let loading = false;
+
+  const first = ['Ana','Ben','Chen','Dara','Eli','Fatima','Gus','Hana','Ivan','Jade','Kofi','Lena','Mo','Nia','Omar','Pia','Quinn','Ravi','Sara','Tom','Uma','Vik','Wen','Yara','Zed'];
+  const last = ['Silva','Okafor','Nguyen','Kim','Rossi','Haddad','Novak','Smith','Garcia','Ito','Khan','Muller'];
+
+  function pickLabel() {
+    const r = Math.random();
+    return r < 0.7 ? 'Invite' : r < 0.8 ? 'Invited' : r < 0.9 ? 'Liked' : 'Following';
+  }
+
+  function makeRow(i) {
+    const name = `${first[i % first.length]} ${last[(i * 7 + mock.post) % last.length]} #${i + 1}`;
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<div class="avatar"></div><a href="#profile-${mock.post}-${i}" role="link"></a><div role="button" tabindex="0" class="act"><span></span></div>`;
+    row.querySelector('a').textContent = name;
+    const btn = row.querySelector('[role="button"]');
+    const label = pickLabel();
+    setLabel(btn, label);
+    btn.addEventListener('click', () => {
+      const current = btn.querySelector('span').textContent;
+      mock.log.push({ post: mock.post, name, label: current, t: Date.now() });
+      if (current !== 'Invite' || btn.getAttribute('aria-disabled') === 'true') return;
+      if (BROKEN) return;
+      if (Math.random() < FAIL) return; // silently ignored click
+      setTimeout(() => setLabel(btn, 'Invited'), 100 + Math.random() * 500);
+    });
+    return row;
+  }
+
+  function setLabel(btn, label) {
+    btn.querySelector('span').textContent = label;
+    btn.className = 'act' + (label === 'Invite' ? ' invite' : '');
+    if (label === 'Invite') btn.removeAttribute('aria-disabled');
+    else btn.setAttribute('aria-disabled', 'true');
+  }
+
+  function addRows(scroller, n) {
+    const loader = scroller.querySelector('.loader');
+    for (let k = 0; k < n && mock.rows < MAX; k++) scroller.insertBefore(makeRow(mock.rows++), loader);
+    if (mock.rows >= MAX && loader) loader.remove();
+    updateInfo();
+  }
+
+  function openPopup() {
+    closePopup();
+    mock.post++;
+    mock.rows = 0;
+    mock.loads = 0;
+    layer = document.createElement('div');
+    layer.className = 'layer';
+    layer.innerHTML = `
+      <div role="dialog" aria-label="Reactions" class="likes">
+        <header><span>All ${MAX}</span><div role="button" aria-label="Close" class="close" tabindex="0">✕</div></header>
+        <div class="scroller"><div class="loader">Loading…</div></div>
+      </div>`;
+    document.body.appendChild(layer);
+    const scroller = layer.querySelector('.scroller');
+    layer.querySelector('[aria-label="Close"]').addEventListener('click', closePopup);
+    addRows(scroller, BATCH);
+    scroller.addEventListener('scroll', () => {
+      if (loading || mock.rows >= MAX) return;
+      if (scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 20) return;
+      loading = true;
+      const wait = FAST ? 300 + Math.random() * 300 : 1000 + Math.random() * 2000;
+      setTimeout(() => {
+        loading = false;
+        if (!scroller.isConnected) return;
+        mock.loads++;
+        addRows(scroller, BATCH);
+      }, wait);
+    });
+  }
+
+  function closePopup() {
+    if (layer) layer.remove();
+    layer = null;
+    loading = false;
+    updateInfo();
+  }
+
+  function showWarning() {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.setAttribute('role', 'alertdialog');
+    t.innerHTML = '<h3>Try Again Later</h3><p>We limit how often you can post, comment or do other things in a given amount of time in order to help protect the community from spam.</p>';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 15000);
+  }
+
+  function updateInfo() {
+    const invited = mock.log.filter((l) => l.post === mock.post).length;
+    document.getElementById('info').textContent =
+      `Post #${mock.post} · rows loaded: ${mock.rows}/${MAX} · clicks this post: ${invited}` +
+      (FAST ? ' · fast' : '') + (BROKEN ? ' · broken' : '');
+  }
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopup(); });
+  document.getElementById('openBtn').addEventListener('click', openPopup);
+  document.getElementById('reactionsLink').addEventListener('click', openPopup);
+  document.getElementById('nextBtn').addEventListener('click', openPopup);
+  document.getElementById('closeBtn').addEventListener('click', closePopup);
+  document.getElementById('warnBtn').addEventListener('click', showWarning);
+  mock.open = openPopup;
+  mock.close = closePopup;
+  mock.warn = showWarning;
+  setInterval(updateInfo, 1000);
+  updateInfo();
+  if (params.get('open') === '1') openPopup();
+})();
+</script>
+</body>
+</html>
